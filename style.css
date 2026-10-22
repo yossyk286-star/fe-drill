@@ -17,7 +17,10 @@
   --mark: #262b32;
   --shadow: 0 1px 2px rgba(20, 30, 45, 0.06), 0 4px 14px rgba(20, 30, 45, 0.05);
   --font-body: "Zen Kaku Gothic New", "Hiragino Kaku Gothic ProN", "Noto Sans JP", system-ui, sans-serif;
-  --font-data: "M PLUS 1 Code", "SF Mono", "Menlo", "Consolas", monospace;
+  /* 数字用：ゼロに点や斜線が入らない書体。桁は tabular-nums でそろえる */
+  --font-data: "Manrope", "Zen Kaku Gothic New", "Hiragino Sans", system-ui, sans-serif;
+  /* プログラム表示だけ等幅 */
+  --font-code: "M PLUS 1 Code", "SF Mono", "Menlo", "Consolas", monospace;
   --tab-h: 62px;
 }
 @media (prefers-color-scheme: dark) {
@@ -389,7 +392,7 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 
 .code {
   background: var(--card); border: 1px solid var(--line); border-radius: 14px; overflow-x: auto;
-  font-family: var(--font-data); font-size: 0.8rem; line-height: 1.75;
+  font-family: var(--font-code); font-size: 0.8rem; line-height: 1.75;
 }
 .code ol { margin: 0; padding: 10px 0; list-style: none; counter-reset: ln; min-width: max-content; }
 .code li { counter-increment: ln; display: flex; padding-right: 14px; }
@@ -466,3 +469,6 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .msg { color: var(--ok); font-weight: 700; }
 .col.met i { background: var(--ok); opacity: 1; }
 .head-btns { display: flex; gap: 12px; flex-wrap: wrap; justify-content: flex-end; }
+
+/* 数字はどこでも桁をそろえる */
+.tile em, .notice-rate, .group-head h2 small, .row-main small, .btn small, .cell, .flash .face small, .trace td { font-variant-numeric: tabular-nums; }

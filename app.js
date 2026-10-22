@@ -333,7 +333,7 @@
     const goalMet = today >= goal;
     const tile = (attrs, icon, title, sub, count, disabled) =>
       `<button class="tile" ${attrs} ${disabled ? "disabled" : ""}>
-        <span class="tile-icon">${icon}</span><strong>${title}</strong><span class="tile-sub">${sub}</span>${count != null ? `<em>${count}</em>` : ""}</button>`;
+        <span class="tile-icon">${icon}</span><strong>${title}</strong><span class="tile-sub">${sub}</span>${count != null && !/^0問/.test(count) ? `<em>${count}</em>` : ""}</button>`;
     const cta = due
       ? `<button class="cta" data-act="start" data-kind="due">
           <span class="cta-icon">${I.redo}</span>
@@ -347,7 +347,7 @@
     return `<header class="appbar"><p class="eyebrow">${greeting()}・${d.getMonth() + 1}月${d.getDate()}日</p><h1>FEドリル</h1></header>
     <main class="page">
       <section class="hero" aria-label="学習状況">
-        ${ring(t.mast / t.total, 112, pct(t.mast / t.total), "習得")}
+        ${ring(t.mast / t.total, 112, t.n ? pct(t.mast / t.total) : "—", "習得")}
         <div class="hero-stats">
           <div><b>${t.seen}<small>/${t.total}</small></b><span>解いた問題</span></div>
           <div><b>${pct(t.rate)}</b><span>正答率</span></div>
@@ -386,11 +386,11 @@
         const left = pool(idsOfCat(c)).length;
         return `<button class="row" data-act="start" data-kind="cat" data-arg="${esc(c)}" ${left ? "" : "disabled"}>
           <span class="row-main"><strong>${esc(c)}</strong>
-            <span class="row-sub">${t.mast}/${t.total}問 習得${t.n ? `・正答率 ${pct(t.rate)}` : ""}</span>
+            <span class="row-sub">${t.n ? `${t.mast}/${t.total}問 習得・正答率 ${pct(t.rate)}` : `${t.total}問・まだ解いていません`}</span>
             <span class="bar"><i style="width:${(t.mast / t.total) * 100}%"></i></span></span>
           <span class="row-go">${I.arrow}</span></button>`;
       }).join("");
-      return `<section class="group"><div class="group-head"><h2>${f.field}<small>${ft.mast}/${ft.total}</small></h2>
+      return `<section class="group"><div class="group-head"><h2>${f.field}<small>${ft.mast ? `${ft.mast}/${ft.total}` : `${ft.total}問`}</small></h2>
         <span class="head-btns">${f.field === "科目B" ? `<button class="text-btn" data-act="start" data-kind="examB">模試 20問・${B_EXAM_MIN}分</button>` : ""}<button class="text-btn" data-act="start" data-kind="field" data-arg="${esc(f.field)}">まとめて解く</button></span></div>
         <div class="list">${rows}</div></section>`;
     }).join("");

@@ -1,5 +1,5 @@
 // オフラインでも開けるようにするキャッシュ。ファイルを更新したら VERSION を上げる
-const VERSION = "fe-drill-v5";
+const VERSION = "fe-drill-v6";
 const FILES = [
   "./", "index.html", "style.css", "app.js",
   "questions.js", "questions-2.js", "questions-3.js", "questions-b.js", "questions-b2.js",
