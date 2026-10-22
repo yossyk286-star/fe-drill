@@ -21,6 +21,9 @@
   const INTERVALS = [1, 3, 7, 14, 30];
   const DUE_MAX = 30;
   const GOALS = [10, 20, 30, 50, 80];
+  const FORMULAS = window.FORMULAS || [];
+  const CONF = [["sure", "自信あり"], ["maybe", "たぶん"], ["guess", "勘"]];
+  const REASONS = [["know", "知らなかった"], ["confuse", "勘違い"], ["calc", "計算ミス"], ["read", "読み違い"]];
 
   // ---------- アイコン ----------
   const svg = (d, extra = "") => `<svg viewBox="0 0 24 24" aria-hidden="true" ${extra}>${d}</svg>`;
@@ -46,6 +49,9 @@
     download: svg('<path d="M12 3.5v12M7 11l5 5 5-5"/><path d="M4 20.5h16"/>'),
     upload: svg('<path d="M12 16V4M7 8.5l5-5 5 5"/><path d="M4 20.5h16"/>'),
     up: svg('<path d="m6 15 6-6 6 6"/>'),
+    formula: svg('<path d="M4 6.5h7M7.5 3v7"/><path d="M13.5 6.5h6.5"/><path d="m4.5 14.5 6 6M10.5 14.5l-6 6"/><path d="M14 16h6M14 19.5h6"/>'),
+    eye: svg('<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>'),
+    swap: svg('<path d="M4 8h14l-3.5-3.5"/><path d="M20 16H6l3.5 3.5"/>'),
   };
 
   // ---------- 用語 ----------
@@ -85,14 +91,14 @@
   }
 
   // ---------- 保存 ----------
-  const blank = () => ({ st: {}, fl: {}, days: {}, known: {}, set: { skip: false, goal: 20, exam: "" } });
+  const blank = () => ({ st: {}, fl: {}, days: {}, known: {}, mist: {}, set: { skip: false, goal: 20, exam: "", conf: true, hide: true } });
   let store = load();
   function load() {
     try {
       const raw = localStorage.getItem(KEY);
       if (!raw) return blank();
       const d = JSON.parse(raw);
-      return { ...blank(), ...d, set: { ...blank().set, ...(d.set || {}) }, days: d.days || {}, known: d.known || {} };
+      return { ...blank(), ...d, set: { ...blank().set, ...(d.set || {}) }, days: d.days || {}, known: d.known || {}, mist: d.mist || {} };
     } catch (e) {
       return blank();
     }
@@ -122,13 +128,19 @@
   // ---------- 集計 ----------
   const stat = (id) => store.st[id] || { n: 0, ok: 0, streak: 0, last: null };
   const mastered = (id) => stat(id).streak >= MASTER_STREAK;
-  function record(id, correct) {
+  // level: "sure" 自信あり / "maybe" たぶん / "guess" 勘 / undefined(模試など、選ばないとき)
+  function record(id, correct, level) {
     const s = { ...stat(id) };
     s.n += 1;
-    if (correct) { s.ok += 1; s.streak += 1; } else { s.streak = 0; }
-    s.last = correct;
-    // 間隔反復：正解が続くほど次に出す日を先にし、間違えたら翌日に出す
-    s.iv = correct ? INTERVALS[Math.min(s.streak - 1, INTERVALS.length - 1)] : 1;
+    const lucky = correct && level === "guess";
+    if (correct) s.ok += 1;
+    // 勘で当たったものは「覚えていない」とみなし、連続正解を0に戻して翌日にまた出す
+    if (correct && !lucky) s.streak += 1; else s.streak = 0;
+    s.last = lucky ? "guess" : correct;
+    s.conf = level || null;
+    // 間隔反復：正解が続くほど次に出す日を先にし、間違えたら翌日に出す。「たぶん」は最長3日
+    s.iv = correct && !lucky ? INTERVALS[Math.min(s.streak - 1, INTERVALS.length - 1)] : 1;
+    if (correct && level === "maybe") s.iv = Math.min(s.iv, 3);
     s.due = dayKey(daysAgo(-s.iv));
     store.st[id] = s;
     const k = dayKey();
@@ -146,7 +158,7 @@
   }
   const idsOfCat = (c) => Q.filter((q) => q.cat === c).map((q) => q.id);
   const idsOfField = (f) => Q.filter((q) => f.cats.includes(q.cat)).map((q) => q.id);
-  const wrongIds = () => Q.filter((q) => stat(q.id).last === false).map((q) => q.id);
+  const wrongIds = () => Q.filter((q) => stat(q.id).last === false || stat(q.id).last === "guess").map((q) => q.id);
   const flagIds = () => Q.filter((q) => store.fl[q.id]).map((q) => q.id);
   const dueIds = () => {
     const today = dayKey();
@@ -170,7 +182,7 @@
   let timerId = null;
   let wordQuery = "";
   let wordMode = "list";
-  let deck = [], di = 0, flipped = false, cardsAll = false;
+  let deck = [], di = 0, flipped = false, cardsAll = false, cardDir = "fwd";
   let backupOpen = false, backupMsg = "";
   let canDownload = false;
   try { canDownload = window.top === window; } catch (e) { canDownload = false; }
@@ -193,7 +205,8 @@
       const idx = BY_ID[id].c.map((_, i) => i);
       order[id] = BY_ID[id].src === "オリジナル" ? shuffle(idx) : idx;
     });
-    return { title, ids, order, i: 0, answers: {}, exam, minutes, review: false, graded: !exam, startedAt: Date.now(), endedAt: null };
+    return { title, ids, order, i: 0, answers: {}, exam, minutes, review: false, graded: !exam, startedAt: Date.now(), endedAt: null,
+      revealed: {}, pending: {}, conf: {}, reason: {}, similar: {} };
   }
   const orderOf = (id) => (session.order && session.order[id]) || BY_ID[id].c.map((_, i) => i);
 
@@ -243,11 +256,55 @@
       return;
     }
     if (id in session.answers) return;
+    // 自信を選ぶ設定なら、まず選択肢に印を付けて、自信のタップで確定する
+    if (store.set.conf) {
+      session.pending[id] = choice;
+      render();
+      return;
+    }
+    finalize(choice);
+  }
+  function finalize(choice, level) {
+    const id = session.ids[session.i];
+    if (id in session.answers) return;
     session.answers[id] = choice;
+    if (level) session.conf[id] = level;
+    delete session.pending[id];
     const ok = choice === BY_ID[id].a;
-    record(id, ok);
+    record(id, ok, level);
+    if (!ok || level === "guess") addSimilar(id);
     save();
     try { navigator.vibrate && navigator.vibrate(ok ? 12 : [18, 50, 18]); } catch (e) { /* 振動できない端末 */ }
+    render();
+  }
+  // 間違えた(勘で当たった)問題の次に、同じ分野で用語がよく重なる問題を1問差し込む
+  function addSimilar(id) {
+    if (session.exam || session.review || session.similar[id]) return;
+    const q = BY_ID[id];
+    const mine = new Set(termsIn([q.q, ...q.c, q.ex]));
+    const inSession = new Set(session.ids);
+    const cands = Q.filter((x) => x.cat === q.cat && !inSession.has(x.id));
+    if (!cands.length) return;
+    let best = [], bestScore = -1;
+    cands.forEach((x) => {
+      const score = termsIn([x.q, ...x.c, x.ex]).filter((t) => mine.has(t)).length;
+      if (score > bestScore) { bestScore = score; best = [x]; } else if (score === bestScore) best.push(x);
+    });
+    const pick = best[Math.floor(Math.random() * best.length)];
+    session.ids.splice(session.i + 1, 0, pick.id);
+    const idx = pick.c.map((_, i) => i);
+    session.order[pick.id] = pick.src === "オリジナル" ? shuffle(idx) : idx;
+    session.similar[id] = pick.id;
+  }
+  function setReason(id, r) {
+    const prev = session.reason[id];
+    if (prev) store.mist[prev] = Math.max(0, (store.mist[prev] || 0) - 1);
+    if (prev === r) { delete session.reason[id]; }
+    else { session.reason[id] = r; store.mist[r] = (store.mist[r] || 0) + 1; }
+    const s = { ...stat(id) };
+    s.reason = session.reason[id] || null;
+    store.st[id] = s;
+    save();
     render();
   }
 
@@ -407,12 +464,23 @@
   }
   function buildDeck() {
     deck = shuffle(G.filter((g) => cardsAll || !store.known[g.t]).map((g) => g.t));
+    // 逆向きのときは、説明の中に用語そのものが出てこないカードだけにする(答えが見えてしまうため)
+    if (cardDir === "rev") deck = deck.filter((t) => maskTerm(BY_T[t]) !== null);
     di = 0;
     flipped = false;
+  }
+  // 説明文の中の用語名・別名を伏せ字にする。伏せても答えが分かってしまう場合は null
+  function maskTerm(g) {
+    let d = g.d;
+    [g.t].concat(g.al || []).sort((a, b) => b.length - a.length).forEach((k) => {
+      d = d.split(k).join("〇〇");
+    });
+    return d.replace(/〇〇/g, "").trim().length < 8 ? null : d;
   }
   function cardView() {
     const known = G.filter((g) => store.known[g.t]).length;
     const head = `<div class="card-meta"><span>覚えた ${known}/${G.length}語</span>
+      <button class="dir-btn" data-act="card-dir">${I.swap}${cardDir === "fwd" ? "用語→意味" : "意味→用語"}</button>
       <label class="mini-toggle" for="cards-all"><input type="checkbox" id="cards-all" class="switch small" data-act="cards-all" ${cardsAll ? "checked" : ""}>覚えた語も出す</label></div>`;
     if (di >= deck.length) {
       return `${head}<section class="card done-card">
@@ -425,8 +493,11 @@
     return `${head}
       <div class="flash-wrap">
         <button class="flash ${flipped ? "flipped" : ""}" id="flash" data-act="card-flip" aria-label="${flipped ? "用語に戻す" : "意味を見る"}">
-          <span class="face front"><small>${di + 1} / ${deck.length}</small><strong>${esc(g.t)}</strong>${g.r ? `<span class="yomi">${esc(g.r)}</span>` : ""}<span class="tap">タップで意味を見る</span></span>
-          <span class="face back"><small>${esc(g.t)}</small><span class="def">${esc(g.d)}</span>${g.al ? `<span class="yomi">別名・略称：${esc(g.al.join("、"))}</span>` : ""}</span>
+          ${cardDir === "fwd"
+            ? `<span class="face front"><small>${di + 1} / ${deck.length}</small><strong>${esc(g.t)}</strong>${g.r ? `<span class="yomi">${esc(g.r)}</span>` : ""}<span class="tap">タップで意味を見る</span></span>
+               <span class="face back"><small>${esc(g.t)}</small><span class="def">${esc(g.d)}</span>${g.al ? `<span class="yomi">別名・略称：${esc(g.al.join("、"))}</span>` : ""}</span>`
+            : `<span class="face front rev"><small>${di + 1} / ${deck.length}</small><span class="q-label">この用語は？</span><span class="def">${esc(maskTerm(g))}</span><span class="tap">タップで答えを見る</span></span>
+               <span class="face back"><small>答え</small><strong class="answer-term">${esc(g.t)}</strong>${g.r ? `<span class="yomi">${esc(g.r)}</span>` : ""}${g.al ? `<span class="yomi">別名・略称：${esc(g.al.join("、"))}</span>` : ""}</span>`}
         </button>
       </div>
       <div class="btns card-btns">
@@ -435,16 +506,24 @@
       </div>
       <p class="foot center">左右にスワイプしても答えられます(右で覚えた・左でまだ)</p>`;
   }
+  function formulaView() {
+    return GROUPS.map((grp) => {
+      const fs = FORMULAS.filter((f) => grp.cats.includes(f.cats[0]));
+      if (!fs.length) return "";
+      return `<section class="group"><div class="group-head"><h2>${grp.field}<small>${fs.length}</small></h2></div><div class="fcards">${fs.map(formulaCard).join("")}</div></section>`;
+    }).join("");
+  }
   function words() {
     const seg = `<div class="seg" role="tablist">
       <button role="tab" aria-selected="${wordMode === "list"}" data-act="wmode" data-mode="list">${I.search}一覧</button>
-      <button role="tab" aria-selected="${wordMode === "cards"}" data-act="wmode" data-mode="cards">${I.cards}暗記カード</button></div>`;
-    return `<header class="appbar"><h1>用語</h1><p class="eyebrow">${G.length}語・問題に出てくる用語の意味</p></header>
+      <button role="tab" aria-selected="${wordMode === "cards"}" data-act="wmode" data-mode="cards">${I.cards}カード</button>
+      <button role="tab" aria-selected="${wordMode === "formulas"}" data-act="wmode" data-mode="formulas">${I.formula}公式</button></div>`;
+    return `<header class="appbar"><h1>用語・公式</h1><p class="eyebrow">用語${G.length}語・公式と覚え方${FORMULAS.length}件</p></header>
     <main class="page">${seg}
       ${wordMode === "list"
         ? `<label class="search">${I.search}<input id="word-search" type="search" placeholder="用語・略語・読みで検索" value="${esc(wordQuery)}" autocomplete="off"></label>
            <div class="list" id="word-list">${wordList()}</div>`
-        : cardView()}
+        : wordMode === "cards" ? cardView() : formulaView()}
     </main>`;
   }
 
@@ -461,10 +540,25 @@
       return;
     }
     const d = obj.data;
-    store = { ...blank(), ...d, set: { ...blank().set, ...(d.set || {}) }, days: d.days || {}, known: d.known || {}, fl: d.fl || {} };
+    store = { ...blank(), ...d, set: { ...blank().set, ...(d.set || {}) }, days: d.days || {}, known: d.known || {}, fl: d.fl || {}, mist: d.mist || {} };
     save();
     backupMsg = `復元しました(${Object.keys(store.st).length}問分の記録)。`;
     render();
+  }
+  function mistakes() {
+    const lucky = Q.filter((q) => stat(q.id).last === "guess").length;
+    const rows = REASONS.map(([k, l]) => [l, store.mist[k] || 0]);
+    const total = rows.reduce((a, [, n]) => a + n, 0);
+    if (!total && !lucky) return "";
+    const max = Math.max(1, ...rows.map(([, n]) => n));
+    const top = rows.slice().sort((a, b) => b[1] - a[1])[0];
+    const advice = { "知らなかった": "用語カードと公式まとめで、知識を先に入れましょう。", "勘違い": "似た用語の違い(例：差分と増分)を、解説の選択肢ごとの説明で確認しましょう。", "計算ミス": "単位(ビットとバイトなど)をそろえてから計算する習慣を。公式まとめの例も確認を。", "読み違い": "「適切でないもの」「最も」など、問題文の条件に印をつけて読みましょう。" };
+    return `<section class="group"><div class="group-head"><h2>ミスの傾向<small>${total}回</small></h2></div>
+      <div class="card">${rows.map(([l, n]) => `<div class="srow"><span class="srow-name">${l}</span><span class="srow-num">${n}回</span>
+        <span class="bar"><i class="low" style="width:${(n / max) * 100}%"></i></span></div>`).join("")}
+        ${lucky ? `<div class="srow"><span class="srow-name">勘で正解した問題(復習待ち)</span><span class="srow-num">${lucky}問</span></div>` : ""}
+      </div>
+      ${total && top[1] ? `<p class="hint">いちばん多いのは「${top[0]}」。${advice[top[0]]}</p>` : ""}</section>`;
   }
   function stats() {
     const t = totals();
@@ -514,6 +608,7 @@
       </section>
       <section class="group"><div class="group-head"><h2>この7日間<small>${week.reduce((a, x) => a + x.n, 0)}問・緑は目標(${store.set.goal}問)達成</small></h2></div>
         <div class="card week" role="img" aria-label="直近7日間の回答数。目標は1日${store.set.goal}問">${bars}</div></section>
+      ${mistakes()}
       ${groups}
       <p class="foot">赤は6割未満、青は8割未満、緑は8割以上。</p>
       <section class="group"><div class="group-head"><h2>設定</h2></div>
@@ -522,6 +617,10 @@
             <input type="date" id="exam-date" class="field" value="${esc(store.set.exam || "")}"></label>
           <label class="row" for="goal"><span class="row-main"><strong>1日の目標</strong><span class="row-sub">ホームとグラフに表示します</span></span>
             <select id="goal" class="field">${GOALS.map((g) => `<option value="${g}" ${g === store.set.goal ? "selected" : ""}>${g}問</option>`).join("")}</select></label>
+          <label class="row toggle" for="conf-on"><span class="row-main"><strong>答えるときに自信を選ぶ</strong><span class="row-sub">勘で当たった問題は正解でも翌日に出し直します</span></span>
+            <input type="checkbox" id="conf-on" class="switch" data-act="conf-on" ${store.set.conf ? "checked" : ""}></label>
+          <label class="row toggle" for="hide-on"><span class="row-main"><strong>選択肢を隠して先に考える</strong><span class="row-sub">問題文だけで答えを思い出してから選択肢を見ます</span></span>
+            <input type="checkbox" id="hide-on" class="switch" data-act="hide-on" ${store.set.hide ? "checked" : ""}></label>
           <label class="row toggle" for="skip"><span class="row-main"><strong>習得済みの問題を出さない</strong><span class="row-sub">2回連続で正解した問題を出題から外します</span></span>
             <input type="checkbox" id="skip" class="switch" data-act="skip" ${store.set.skip ? "checked" : ""}></label>
           <button class="row" data-act="backup-toggle" aria-expanded="${backupOpen}"><span class="row-main"><strong>記録のバックアップ・引き継ぎ</strong><span class="row-sub">機種変更やブラウザを変えるときに</span></span><span class="row-go">${backupOpen ? I.up : I.arrow}</span></button>
@@ -538,29 +637,38 @@
     const q = BY_ID[id];
     const ord = orderOf(id);
     const chosen = session.answers[id];
+    const practice = !session.exam && !session.review;
     const showAnswer = session.review || (!session.exam && chosen !== undefined);
+    const pending = practice && chosen === undefined ? session.pending[id] : undefined;
+    // 選択肢を隠して先に考える(練習のときだけ)
+    const hidden = practice && store.set.hide && chosen === undefined && pending === undefined && !session.revealed[id];
     const s = stat(id);
     const total = session.ids.length;
     const done = session.i + (showAnswer || (session.exam && chosen !== undefined) ? 1 : 0);
     const used = new Set();
     const qHtml = linkify(q.q, used);
+    const level = session.conf[id];
 
-    const choices = ord.map((i, pos) => {
-      const text = q.c[i];
-      let cls = "choice";
-      if (showAnswer) {
-        if (i === q.a) cls += " right";
-        else if (i === chosen) cls += " wrong";
-        else cls += " dim";
-      } else if (i === chosen) cls += " picked";
-      const note = showAnswer ? `<span class="note">${linkify(q.why[i], used)}</span>` : "";
-      return `<button class="${cls}" data-act="answer" data-i="${pos}" ${showAnswer ? 'aria-disabled="true"' : ""}>
-        <span class="oval">${KANA[pos]}</span><span class="body">${showAnswer ? linkify(text, used) : esc(text)}${note}</span></button>`;
-    }).join("");
+    const choices = hidden
+      ? `<button class="reveal" data-act="reveal">${I.eye}<span><strong>選択肢を見る</strong><small>まず答えを頭の中で思い浮かべてから</small></span></button>`
+      : `<div class="choices">${ord.map((i, pos) => {
+        const text = q.c[i];
+        let cls = "choice";
+        if (showAnswer) {
+          if (i === q.a) cls += " right";
+          else if (i === chosen) cls += " wrong";
+          else cls += " dim";
+        } else if (i === chosen || i === pending) cls += " picked";
+        const note = showAnswer ? `<span class="note">${linkify(q.why[i], used)}</span>` : "";
+        return `<button class="${cls}" data-act="answer" data-i="${pos}" ${showAnswer ? 'aria-disabled="true"' : ""}>
+          <span class="oval">${KANA[pos]}</span><span class="body">${showAnswer ? linkify(text, used) : esc(text)}${note}</span></button>`;
+      }).join("")}</div>`;
 
+    const hasFormula = FORMULAS.some((f) => f.cats.includes(q.cat));
     let below = "";
     if (!showAnswer) {
-      const pre = termsIn([q.q, ...q.c]);
+      // 選択肢を隠している間は、選択肢の中の用語は出さない(答えのヒントになるため)
+      const pre = termsIn(hidden ? [q.q] : [q.q, ...q.c]);
       if (pre.length) below = `<div class="pre-terms"><span>わからない用語は</span>${pre.map((w) => `<button class="chip" data-term="${esc(w)}">${esc(w)}</button>`).join("")}</div>`;
     } else {
       below = `<section class="explain"><h3>解説</h3><p>${linkify(q.ex, used)}</p></section>`;
@@ -570,6 +678,8 @@
           <tbody>${q.trace.rows.map((r) => `<tr>${r.map((c) => `<td>${esc(c)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>
           ${q.trace.note ? `<p class="trace-note">${esc(q.trace.note)}</p>` : ""}</section>`;
       }
+      const fs = FORMULAS.filter((f) => f.cats.includes(q.cat));
+      if (fs.length) below += `<section class="explain"><h3>この分野の公式・覚え方</h3><div class="chips">${fs.map((f) => `<button class="chip formula-chip" data-act="formula" data-t="${esc(f.t)}">${I.formula}${esc(f.t)}</button>`).join("")}</div></section>`;
       const words = termsIn([q.q, ...q.c, q.ex, ...q.why]);
       if (words.length) below += `<section class="explain"><h3>この問題の用語</h3><div class="chips">${words.map((w) => `<button class="chip" data-term="${esc(w)}">${esc(w)}</button>`).join("")}</div></section>`;
     }
@@ -578,27 +688,36 @@
     const flagged = !!store.fl[id];
     const isLast = session.i === total - 1;
 
-    let dock;
+    let dock = "";
     if (session.exam && !session.graded) {
       const answered = Object.keys(session.answers).length;
       dock = `<div class="dock"><div class="btns">
         <button class="btn" data-act="prev" ${session.i ? "" : "disabled"}>${I.back}前へ</button>
         ${isLast ? `<button class="btn primary" data-act="grade">採点する<small>${answered}/${total}</small></button>` : `<button class="btn primary" data-act="next">次へ${I.arrow}</button>`}
       </div></div>`;
+    } else if (pending !== undefined) {
+      dock = `<div class="dock conf-dock"><p class="dock-q"><strong>${KANA[ord.indexOf(pending)]}</strong> で答えます。自信は？</p>
+        <div class="btns conf">${CONF.map(([k, l]) => `<button class="btn conf-${k}" data-act="conf" data-level="${k}">${l}</button>`).join("")}</div></div>`;
     } else if (showAnswer) {
       const ok = chosen === q.a;
-      const head = chosen === undefined ? "未回答" : ok ? "正解！" : "不正解";
+      const lucky = ok && level === "guess";
+      const head = chosen === undefined ? "未回答" : lucky ? "正解(勘)" : ok ? "正解！" : "不正解";
       const right = KANA[ord.indexOf(q.a)];
       const nextLabel = session.review ? (isLast ? "結果に戻る" : "次へ") : isLast ? "結果を見る" : "次の問題";
-      dock = `<div class="dock feedback ${ok ? "ok" : "ng"}">
-        <div class="fb-head"><span class="fb-icon">${ok ? I.check : I.close}</span><div><strong>${head}</strong>${ok ? "" : `<span>正解は ${right}</span>`}</div></div>
+      const sub = !ok ? `<span>正解は ${right}</span>`
+        : lucky ? "<span>まぐれかもしれないので、明日もう一度出します</span>"
+        : level === "maybe" ? "<span>あやふやなので、3日以内にもう一度出します</span>" : "";
+      const sim = practice && session.similar[id] ? `<p class="sim-note">${I.redo}次に、似た問題を1問出します</p>` : "";
+      const reasons = practice && !ok && chosen !== undefined
+        ? `<div class="reasons" role="group" aria-label="間違えた理由"><span>理由は？</span>${REASONS.map(([k, l]) => `<button class="chip ${session.reason[id] === k ? "on" : ""}" data-act="reason" data-r="${k}" aria-pressed="${session.reason[id] === k}">${l}</button>`).join("")}</div>` : "";
+      dock = `<div class="dock feedback ${ok && !lucky ? "ok" : lucky ? "warn" : "ng"}">
+        <div class="fb-head"><span class="fb-icon">${ok ? I.check : I.close}</span><div><strong>${head}</strong>${sub}</div></div>
+        ${reasons}${sim}
         <div class="btns">${session.review ? `<button class="btn" data-act="prev" ${session.i ? "" : "disabled"}>${I.back}前へ</button>` : ""}
-        <button class="btn ${ok ? "go-ok" : "go-ng"}" data-act="next">${nextLabel}</button></div></div>`;
-    } else {
-      dock = "";
+        <button class="btn ${ok && !lucky ? "go-ok" : lucky ? "go-warn" : "go-ng"}" data-act="next">${nextLabel}</button></div></div>`;
     }
 
-    const timer = session.exam && !session.graded ? `<span class="timer" id="timer">${I.timer}<span>90:00</span></span>` : "";
+    const timer = session.exam && !session.graded ? `<span class="timer" id="timer">${I.timer}<span>--:--</span></span>` : "";
     return `<div class="quiz ${dock ? "with-dock" : ""}">
       <header class="qbar">
         <button class="icon-btn" data-act="quit" aria-label="${session.review ? "結果に戻る" : "やめる"}">${I.close}</button>
@@ -607,10 +726,12 @@
       </header>
       <main class="qbody">
         <div class="meta">${q.part === "B" ? `<span class="cat-chip b">科目B</span>` : ""}<span class="cat-chip">${esc(q.cat)}</span><span>${esc(q.src)}</span><span class="dot">${history}</span>
-          <button class="icon-btn flag ${flagged ? "on" : ""}" data-act="flag" aria-pressed="${flagged}" aria-label="あとで見直す">${I.flag}</button></div>
+          <span class="meta-btns">
+          ${hasFormula && !(session.exam && !session.graded) ? `<button class="icon-btn" data-act="formula" data-cat="${esc(q.cat)}" aria-label="この分野の公式・覚え方">${I.formula}</button>` : ""}
+          <button class="icon-btn flag ${flagged ? "on" : ""}" data-act="flag" aria-pressed="${flagged}" aria-label="あとで見直す">${I.flag}</button></span></div>
         <p class="question">${qHtml}</p>
         ${q.code ? `<div class="code" role="region" aria-label="プログラム"><ol>${q.code.map((l) => `<li><code>${esc(l) || " "}</code></li>`).join("")}</ol></div>` : ""}
-        <div class="choices">${choices}</div>
+        ${choices}
         ${below}
       </main>
       ${dock}
@@ -688,6 +809,26 @@
         <button class="icon-btn" data-close="1" id="term-close" aria-label="閉じる">${I.close}</button></div>
         ${g.al ? `<p class="term-al">別名・略称：${esc(g.al.join("、"))}</p>` : ""}
         <p class="term-def">${linkify(g.d, new Set(), g)}</p>
+      </div>`;
+    sheet.hidden = false;
+    document.getElementById("term-close").focus();
+  }
+  function formulaCard(f) {
+    return `<article class="fcard" id="f-${esc(f.t)}"><h3>${esc(f.t)}</h3>
+      <ul>${f.f.map((l) => `<li>${esc(l)}</li>`).join("")}</ul>
+      ${f.ex ? `<p class="fex"><b>例</b>${esc(f.ex)}</p>` : ""}
+      ${f.tip ? `<p class="ftip">${I.bolt}<span>${esc(f.tip)}</span></p>` : ""}</article>`;
+  }
+  function openFormulas(cat, t) {
+    const list = t ? FORMULAS.filter((f) => f.t === t) : FORMULAS.filter((f) => f.cats.includes(cat));
+    if (!list.length) return;
+    if (sheet.hidden) lastFocus = document.activeElement;
+    sheet.innerHTML = `<div class="sheet-back" data-close="1"></div>
+      <div class="term-sheet" role="dialog" aria-modal="true" aria-labelledby="term-title">
+        <div class="grabber" aria-hidden="true"></div>
+        <div class="term-head"><div><h2 id="term-title">${t ? "公式・覚え方" : `${esc(cat)}の公式・覚え方`}</h2></div>
+        <button class="icon-btn" data-close="1" id="term-close" aria-label="閉じる">${I.close}</button></div>
+        <div class="fcards">${list.map(formulaCard).join("")}</div>
       </div>`;
     sheet.hidden = false;
     document.getElementById("term-close").focus();
@@ -782,6 +923,15 @@
         if (suppressFlip) { suppressFlip = false; break; }
         flipped = !flipped; render(); break;
       case "card-know": cardAnswer(true); break;
+      case "card-dir": cardDir = cardDir === "fwd" ? "rev" : "fwd"; buildDeck(); render(); break;
+      case "reveal": session.revealed[session.ids[session.i]] = true; render(); break;
+      case "conf": {
+        const id = session.ids[session.i];
+        if (session.pending[id] !== undefined) finalize(session.pending[id], el.dataset.level);
+        break;
+      }
+      case "reason": setReason(session.ids[session.i], el.dataset.r); break;
+      case "formula": openFormulas(el.dataset.cat, el.dataset.t); break;
       case "card-again": cardAnswer(false); break;
       case "cards-restart": buildDeck(); render(); break;
       case "backup-toggle": backupOpen = !backupOpen; backupMsg = ""; render(); break;
@@ -821,6 +971,8 @@
     const t = e.target;
     if (t.dataset.act === "skip") { store.set.skip = t.checked; save(); render(); }
     else if (t.dataset.act === "cards-all") { cardsAll = t.checked; buildDeck(); render(); }
+    else if (t.dataset.act === "conf-on") { store.set.conf = t.checked; save(); render(); }
+    else if (t.dataset.act === "hide-on") { store.set.hide = t.checked; save(); render(); }
     else if (t.id === "exam-date") { store.set.exam = t.value; save(); render(); }
     else if (t.id === "goal") { store.set.goal = Number(t.value) || 20; save(); render(); }
     else if (t.id === "backup-file" && t.files && t.files[0]) {
@@ -835,6 +987,15 @@
       openTerm(e.target.dataset.term); e.preventDefault(); return;
     }
     if (screen !== "quiz" || e.metaKey || e.ctrlKey || e.altKey || e.target.tagName === "INPUT") return;
+    const cur = session.ids[session.i];
+    if (!session.exam && !session.review && store.set.hide && !session.revealed[cur] && !(cur in session.answers) && session.pending[cur] === undefined) {
+      if (e.key === " " || e.key === "Enter") { session.revealed[cur] = true; render(); e.preventDefault(); }
+      return;
+    }
+    if (session.pending[cur] !== undefined && !(cur in session.answers)) {
+      const lv = { s: "sure", m: "maybe", g: "guess" }[e.key];
+      if (lv) { finalize(session.pending[cur], lv); e.preventDefault(); return; }
+    }
     const map = { "1": 0, "2": 1, "3": 2, "4": 3, a: 0, b: 1, c: 2, d: 3 };
     if (e.key in map) { answer(map[e.key]); e.preventDefault(); }
     else if (e.key === "Enter" || e.key === "ArrowRight") {
