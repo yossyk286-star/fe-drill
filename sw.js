@@ -1,8 +1,8 @@
 // オフラインでも開けるようにするキャッシュ。ファイルを更新したら VERSION を上げる
-const VERSION = "fe-drill-v7";
+const VERSION = "fe-drill-v8";
 const FILES = [
   "./", "index.html", "style.css", "app.js",
-  "questions.js", "questions-2.js", "questions-3.js", "questions-b.js", "questions-b2.js",
+  "questions.js", "questions-2.js", "questions-3.js", "questions-b.js", "questions-b2.js", "questions-ipa-r01a.js",
   "glossary.js", "glossary-2.js", "formulas.js", "manifest.json",
   "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png",
 ];

@@ -528,3 +528,10 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .flash .answer-term { font-size: 1.6rem; line-height: 1.35; text-wrap: balance; }
 .flash .back strong.answer-term { margin-top: auto; }
 .flash .back:has(.answer-term) { justify-content: center; }
+
+/* IPA 過去問 */
+.set-row { display: flex; flex-direction: column; }
+.set-row + .set-row { border-top: 1px solid var(--line); }
+.set-exam { display: flex; align-items: center; gap: 6px; margin: -4px 16px 12px; padding: 8px 12px; border-radius: 10px; background: var(--accent-soft); color: var(--accent); font-weight: 700; font-size: 0.85rem; }
+.set-exam svg { width: 16px; height: 16px; }
+.credit { margin: -4px 2px 0; font-size: 0.72rem; color: var(--muted); line-height: 1.6; }

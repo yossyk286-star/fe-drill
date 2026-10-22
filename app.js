@@ -22,6 +22,9 @@
   const DUE_MAX = 30;
   const GOALS = [10, 20, 30, 50, 80];
   const FORMULAS = window.FORMULAS || [];
+  const SETS = window.IPA_SETS || [];
+  const idsOfSet = (sid) => Q.filter((q) => q.set === sid).sort((x, y) => x.no - y.no).map((q) => q.id);
+  const ORIG_COUNT = Q.filter((q) => !q.set).length;
   const CONF = [["sure", "自信あり"], ["maybe", "たぶん"], ["guess", "勘"]];
   const REASONS = [["know", "知らなかった"], ["confuse", "勘違い"], ["calc", "計算ミス"], ["read", "読み違い"]];
 
@@ -219,6 +222,14 @@
     if (kind === "random") begin("今日の10問", shuffle(pool(A_IDS)).slice(0, 10));
     else if (kind === "due") begin("今日の復習", dueIds().slice(0, DUE_MAX));
     else if (kind === "b") begin("科目B", shuffle(pool(B_IDS)));
+    else if (kind === "set") {
+      const st = SETS.find((x) => x.id === arg);
+      begin(`${st.title} 過去問`, idsOfSet(arg));
+    }
+    else if (kind === "setExam") {
+      const st = SETS.find((x) => x.id === arg);
+      begin(`${st.title} 本番形式`, idsOfSet(arg), true, st.minutes);
+    }
     else if (kind === "wrong") begin("苦手を復習", shuffle(wrongIds()));
     else if (kind === "flag") begin("チェックした問題", shuffle(flagIds()));
     else if (kind === "examB") {
@@ -426,11 +437,12 @@
         ${tile('data-act="start" data-kind="b"', I.code, "科目B", "擬似言語・セキュリティ(模試は分野タブ)", `${B_IDS.length}問`, false)}
       </div>
 
+      ${SETS.length ? `<button class="row-btn" data-act="start" data-kind="set" data-arg="${esc(SETS[0].id)}">${I.book}<span>IPA過去問 ${esc(SETS[0].title)}(${SETS[0].count}問)</span>${I.arrow}</button>` : ""}
       ${weak ? `<button class="notice" data-act="start" data-kind="cat" data-arg="${esc(weak.cat)}">
         <span><small>いちばん苦手な分野</small><strong>${esc(weak.cat)}</strong></span><span class="notice-rate">${pct(weak.rate)}</span>${I.arrow}</button>` : ""}
       ${left == null ? `<button class="row-btn subtle" data-act="tab" data-tab="stats">${I.calendar}<span>試験日を設定すると、あと何日かが出ます</span>${I.arrow}</button>` : ""}
 
-      <p class="foot">科目A ${A_IDS.length}問・科目B ${B_IDS.length}問、すべてFEドリルのオリジナル問題。記録はこの端末に保存されます。</p>
+      <p class="foot">科目A ${A_IDS.length}問(うちIPA過去問 ${Q.length - ORIG_COUNT}問)・科目B ${B_IDS.length}問。過去問以外はFEドリルのオリジナル問題です。記録はこの端末に保存されます。</p>
     </main>`;
   }
 
@@ -451,8 +463,21 @@
         <span class="head-btns">${f.field === "科目B" ? `<button class="text-btn" data-act="start" data-kind="examB">模試 20問・${B_EXAM_MIN}分</button>` : ""}<button class="text-btn" data-act="start" data-kind="field" data-arg="${esc(f.field)}">まとめて解く</button></span></div>
         <div class="list">${rows}</div></section>`;
     }).join("");
+    const past = SETS.length ? `<section class="group"><div class="group-head"><h2>IPA 過去問<small>${SETS.reduce((a, x) => a + x.count, 0)}問</small></h2></div>
+      <div class="list">${SETS.map((st) => {
+        const t = totals(idsOfSet(st.id));
+        return `<div class="set-row">
+          <button class="row" data-act="start" data-kind="set" data-arg="${esc(st.id)}">
+            <span class="row-main"><strong>${esc(st.title)} 午前</strong>
+              <span class="row-sub">${t.n ? `${t.seen}/${t.total}問 解いた・正答率 ${pct(t.rate)}` : `${t.total}問・問1から順に解説付きで`}</span>
+              <span class="bar"><i style="width:${(t.seen / t.total) * 100}%"></i></span></span>
+            <span class="row-go">${I.arrow}</span></button>
+          <button class="set-exam" data-act="start" data-kind="setExam" data-arg="${esc(st.id)}">${I.timer}本番形式で解く(${st.count}問・${st.minutes}分)</button>
+        </div>`;
+      }).join("")}</div>
+      <p class="foot">出典：IPA 基本情報技術者試験 過去問題。正解は IPA 公表の解答例、解説は FEドリルのオリジナルです。</p></section>` : "";
     return `<header class="appbar"><h1>分野</h1></header>
-    <main class="page">${store.set.skip ? `<p class="hint">習得済みの問題は出題しない設定です(成績タブで変更)。</p>` : ""}${groups}</main>`;
+    <main class="page">${store.set.skip ? `<p class="hint">習得済みの問題は出題しない設定です(成績タブで変更)。</p>` : ""}${past}${groups}</main>`;
   }
 
   // ---------- 用語 ----------
@@ -732,6 +757,7 @@
         <p class="question">${qHtml}</p>
         ${q.code ? `<div class="code" role="region" aria-label="プログラム"><ol>${q.code.map((l) => `<li><code>${esc(l) || " "}</code></li>`).join("")}</ol></div>` : ""}
         ${choices}
+        ${q.credit ? `<p class="credit">${esc(q.credit)}</p>` : ""}
         ${below}
       </main>
       ${dock}
