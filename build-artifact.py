@@ -4,7 +4,7 @@ from pathlib import Path
 
 root = Path(__file__).parent
 css = (root / "style.css").read_text(encoding="utf-8")
-qs = "\n".join((root / f).read_text(encoding="utf-8") for f in ["questions.js", "questions-2.js", "questions-3.js", "questions-b.js", "questions-b2.js", "questions-ipa-r01a.js"])
+qs = "\n".join((root / f).read_text(encoding="utf-8") for f in ["questions.js", "questions-2.js", "questions-3.js", "questions-b.js", "questions-b2.js", "questions-ipa-r08.js", "questions-ipa-r01a.js", "questions-ipa-h31h.js", "questions-ipa-h30a.js"])
 gl = "\n".join((root / f).read_text(encoding="utf-8") for f in ["glossary.js", "glossary-2.js", "formulas.js"])
 js = (root / "app.js").read_text(encoding="utf-8")
 

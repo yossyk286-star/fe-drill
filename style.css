@@ -250,7 +250,7 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .meta .flag svg { width: 20px; height: 20px; }
 .meta .flag.on { color: var(--warm); }
 .meta .flag.on svg { fill: currentColor; }
-.question { margin: 0; font-size: 1.08rem; line-height: 1.9; font-weight: 500; }
+.question { margin: 0; font-size: 1.08rem; line-height: 1.9; font-weight: 500; white-space: pre-line; }
 
 .choices { display: flex; flex-direction: column; gap: 10px; }
 .choice {
@@ -394,13 +394,14 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
   background: var(--card); border: 1px solid var(--line); border-radius: 14px; overflow-x: auto;
   font-family: var(--font-code); font-size: 0.8rem; line-height: 1.75;
 }
-.code ol { margin: 0; padding: 10px 0; list-style: none; counter-reset: ln; min-width: max-content; }
+.code ol { margin: 0; padding: 10px 0; list-style: none; counter-reset: ln; }
 .code li { counter-increment: ln; display: flex; padding-right: 14px; }
 .code li::before {
   content: counter(ln); flex: none; width: 2.6em; padding-right: 0.8em; text-align: right;
   color: var(--muted); opacity: 0.6; user-select: none; font-variant-numeric: tabular-nums;
 }
-.code code { font-family: inherit; white-space: pre; }
+/* 長い行は折り返す(インデントは保つ)。スマホで横スクロールしなくても全文が読める */
+.code code { font-family: inherit; white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; flex: 1; }
 .table-wrap { overflow-x: auto; margin: 0 -4px; }
 .trace { border-collapse: collapse; font-size: 0.8rem; min-width: 100%; font-variant-numeric: tabular-nums; }
 .trace th, .trace td { padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap; }

@@ -3,7 +3,7 @@
 
   const Q = window.QUESTIONS;
   const BY_ID = Object.fromEntries(Q.map((q) => [q.id, q]));
-  const KANA = ["ア", "イ", "ウ", "エ"];
+  const KANA = ["ア", "イ", "ウ", "エ", "オ", "カ", "キ", "ク", "ケ", "コ"];
   const KEY = "fe-drill-v1";
   const EXAM_LEN = 60;
   const EXAM_MIN = 90;
@@ -224,11 +224,11 @@
     else if (kind === "b") begin("科目B", shuffle(pool(B_IDS)));
     else if (kind === "set") {
       const st = SETS.find((x) => x.id === arg);
-      begin(`${st.title} 過去問`, idsOfSet(arg));
+      begin(`${st.label} 過去問`, idsOfSet(arg));
     }
     else if (kind === "setExam") {
       const st = SETS.find((x) => x.id === arg);
-      begin(`${st.title} 本番形式`, idsOfSet(arg), true, st.minutes);
+      begin(`${st.label} 本番形式`, idsOfSet(arg), true, st.minutes);
     }
     else if (kind === "wrong") begin("苦手を復習", shuffle(wrongIds()));
     else if (kind === "flag") begin("チェックした問題", shuffle(flagIds()));
@@ -261,12 +261,13 @@
     const id = session.ids[session.i];
     if (session.review) return;
     const choice = orderOf(id)[pos];
+    if (choice === undefined) return;
     if (session.exam) {
       session.answers[id] = choice;
       render();
       return;
     }
-    if (id in session.answers) return;
+    if (id in session.answers || choice === undefined) return;
     // 自信を選ぶ設定なら、まず選択肢に印を付けて、自信のタップで確定する
     if (store.set.conf) {
       session.pending[id] = choice;
@@ -437,12 +438,12 @@
         ${tile('data-act="start" data-kind="b"', I.code, "科目B", "擬似言語・セキュリティ(模試は分野タブ)", `${B_IDS.length}問`, false)}
       </div>
 
-      ${SETS.length ? `<button class="row-btn" data-act="start" data-kind="set" data-arg="${esc(SETS[0].id)}">${I.book}<span>IPA過去問 ${esc(SETS[0].title)}(${SETS[0].count}問)</span>${I.arrow}</button>` : ""}
+      ${SETS.length ? `<button class="row-btn" data-act="tab" data-tab="cats">${I.book}<span>IPA過去問 ${SETS.length}回分(${SETS.reduce((a, x) => a + x.count, 0)}問)・本番形式も</span>${I.arrow}</button>` : ""}
       ${weak ? `<button class="notice" data-act="start" data-kind="cat" data-arg="${esc(weak.cat)}">
         <span><small>いちばん苦手な分野</small><strong>${esc(weak.cat)}</strong></span><span class="notice-rate">${pct(weak.rate)}</span>${I.arrow}</button>` : ""}
       ${left == null ? `<button class="row-btn subtle" data-act="tab" data-tab="stats">${I.calendar}<span>試験日を設定すると、あと何日かが出ます</span>${I.arrow}</button>` : ""}
 
-      <p class="foot">科目A ${A_IDS.length}問(うちIPA過去問 ${Q.length - ORIG_COUNT}問)・科目B ${B_IDS.length}問。過去問以外はFEドリルのオリジナル問題です。記録はこの端末に保存されます。</p>
+      <p class="foot">科目A ${A_IDS.length}問・科目B ${B_IDS.length}問(うちIPA過去問・公開問題 ${Q.length - ORIG_COUNT}問)。過去問以外はFEドリルのオリジナル問題です。記録はこの端末に保存されます。</p>
     </main>`;
   }
 
@@ -468,14 +469,14 @@
         const t = totals(idsOfSet(st.id));
         return `<div class="set-row">
           <button class="row" data-act="start" data-kind="set" data-arg="${esc(st.id)}">
-            <span class="row-main"><strong>${esc(st.title)} 午前</strong>
+            <span class="row-main"><strong>${esc(st.label)}</strong>
               <span class="row-sub">${t.n ? `${t.seen}/${t.total}問 解いた・正答率 ${pct(t.rate)}` : `${t.total}問・問1から順に解説付きで`}</span>
               <span class="bar"><i style="width:${(t.seen / t.total) * 100}%"></i></span></span>
             <span class="row-go">${I.arrow}</span></button>
           <button class="set-exam" data-act="start" data-kind="setExam" data-arg="${esc(st.id)}">${I.timer}本番形式で解く(${st.count}問・${st.minutes}分)</button>
         </div>`;
       }).join("")}</div>
-      <p class="foot">出典：IPA 基本情報技術者試験 過去問題。正解は IPA 公表の解答例、解説は FEドリルのオリジナルです。</p></section>` : "";
+      <p class="foot">出典：IPA 基本情報技術者試験 過去問題・公開問題。正解は IPA 公表の解答例、解説は FEドリルのオリジナルです。</p></section>` : "";
     return `<header class="appbar"><h1>分野</h1></header>
     <main class="page">${store.set.skip ? `<p class="hint">習得済みの問題は出題しない設定です(成績タブで変更)。</p>` : ""}${past}${groups}</main>`;
   }
@@ -1022,7 +1023,7 @@
       const lv = { s: "sure", m: "maybe", g: "guess" }[e.key];
       if (lv) { finalize(session.pending[cur], lv); e.preventDefault(); return; }
     }
-    const map = { "1": 0, "2": 1, "3": 2, "4": 3, a: 0, b: 1, c: 2, d: 3 };
+    const map = { "1": 0, "2": 1, "3": 2, "4": 3, "5": 4, "6": 5, "7": 6, "8": 7, "9": 8, "0": 9, a: 0, b: 1, c: 2, d: 3 };
     if (e.key in map) { answer(map[e.key]); e.preventDefault(); }
     else if (e.key === "Enter" || e.key === "ArrowRight") {
       const id = session.ids[session.i];

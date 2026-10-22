@@ -608,7 +608,7 @@ window.IPA_R01A.push(
 
 // ---- アプリの問題データに組み込む ----
 (function () {
-  const SET = { id: "r01a", title: "令和元年度 秋期", full: "令和元年度 秋期 基本情報技術者試験 午前", count: window.IPA_R01A.length, minutes: 150 };
+  const SET = { id: "r01a", title: "令和元年度 秋期", kind: "午前", label: "令和元年度 秋期 午前", full: "令和元年度 秋期 基本情報技術者試験 午前", count: window.IPA_R01A.length, minutes: 150 };
   window.IPA_SETS.push(SET);
   window.IPA_R01A.forEach(function (x) {
     window.QUESTIONS.push({
